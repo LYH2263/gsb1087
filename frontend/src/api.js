@@ -215,6 +215,16 @@ export const api = {
   deleteAddress(id) {
     return request(`/addresses/${id}`, { method: 'DELETE' });
   },
+  getCoupons() {
+    return request('/coupons');
+  },
+  applyCoupon(payload) {
+    return request('/coupons/apply', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+  },
   admin: {
     getBooks(params = {}) {
       const query = new URLSearchParams(params).toString();
@@ -283,6 +293,26 @@ export const api = {
         method: 'POST',
         body: formData
       });
+    },
+    getCoupons() {
+      return request('/admin/coupons');
+    },
+    createCoupon(payload) {
+      return request('/admin/coupons', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    },
+    updateCoupon(id, payload) {
+      return request(`/admin/coupons/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    },
+    deleteCoupon(id) {
+      return request(`/admin/coupons/${id}`, { method: 'DELETE' });
     }
   }
 };

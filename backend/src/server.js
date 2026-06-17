@@ -16,6 +16,7 @@ const cartRoutes = require('./routes/cart');
 const orderRoutes = require('./routes/orders');
 const addressRoutes = require('./routes/addresses');
 const adminRoutes = require('./routes/admin');
+const couponRoutes = require('./routes/coupons');
 
 const app = express();
 const fs = require('fs');
@@ -49,6 +50,7 @@ app.use('/api/books', bookRoutes);
 app.use('/api/cart', requireAuth, cartRoutes);
 app.use('/api/orders', requireAuth, orderRoutes);
 app.use('/api/addresses', requireAuth, addressRoutes);
+app.use('/api/coupons', requireAuth, couponRoutes);
 app.use('/api/admin', requireAuth, requireRole('ADMIN'), adminRoutes);
 
 app.use((req, res) => {

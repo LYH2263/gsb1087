@@ -5,7 +5,7 @@ const multer = require('multer');
 const prisma = require('../db');
 const asyncHandler = require('../utils/asyncHandler');
 const { ApiError } = require('../errors');
-const { bookSchema, bookUpdateSchema, categorySchema } = require('../validators');
+const { bookSchema, bookUpdateSchema, categorySchema, couponCreateSchema, couponUpdateSchema } = require('../validators');
 const { toCents, fromCents } = require('../utils/money');
 
 const router = express.Router();
@@ -345,9 +345,119 @@ router.post('/orders/:id/refund', asyncHandler(async (req, res) => {
         }
       });
     }
+
+    if (order.couponId) {
+      await tx.coupon.update({
+        where: { id: order.couponId },
+        data: { usedCount: { decrement: 1 } }
+      });
+    }
   });
 
   res.json({ message: 'order refunded' });
+}));
+
+router.get('/coupons', asyncHandler(async (req, res) => {
+  const coupons = await prisma.coupon.findMany({
+    orderBy: { createdAt: 'desc' }
+  });
+
+  res.json(coupons.map(coupon => ({
+    id: coupon.id,
+    code: coupon.code,
+    name: coupon.name,
+    type: coupon.type,
+    discountValue: coupon.discountValue,
+    minOrderCents: coupon.minOrderCents,
+    startsAt: coupon.startsAt,
+    expiresAt: coupon.expiresAt,
+    usageLimit: coupon.usageLimit,
+    usedCount: coupon.usedCount,
+    status: coupon.status,
+    createdAt: coupon.createdAt
+  })));
+}));
+
+router.post('/coupons', asyncHandler(async (req, res) => {
+  const payload = couponCreateSchema.parse(req.body);
+
+  const exists = await prisma.coupon.findUnique({
+    where: { code: payload.code }
+  });
+  if (exists) {
+    throw new ApiError(409, 'COUPON_CODE_EXISTS');
+  }
+
+  const coupon = await prisma.coupon.create({
+    data: {
+      code: payload.code,
+      name: payload.name,
+      type: payload.type,
+      discountValue: payload.discountValue,
+      minOrderCents: payload.minOrderCents,
+      startsAt: payload.startsAt,
+      expiresAt: payload.expiresAt,
+      usageLimit: payload.usageLimit ?? null
+    }
+  });
+
+  res.status(201).json({
+    id: coupon.id,
+    code: coupon.code,
+    name: coupon.name,
+    type: coupon.type,
+    discountValue: coupon.discountValue,
+    minOrderCents: coupon.minOrderCents,
+    startsAt: coupon.startsAt,
+    expiresAt: coupon.expiresAt,
+    usageLimit: coupon.usageLimit,
+    usedCount: coupon.usedCount,
+    status: coupon.status,
+    createdAt: coupon.createdAt
+  });
+}));
+
+router.patch('/coupons/:id', asyncHandler(async (req, res) => {
+  const payload = couponUpdateSchema.parse(req.body);
+
+  const coupon = await prisma.coupon.findUnique({
+    where: { id: req.params.id }
+  });
+  if (!coupon) {
+    throw new ApiError(404, 'COUPON_NOT_FOUND');
+  }
+
+  const updated = await prisma.coupon.update({
+    where: { id: req.params.id },
+    data: payload
+  });
+
+  res.json({
+    id: updated.id,
+    code: updated.code,
+    name: updated.name,
+    type: updated.type,
+    discountValue: updated.discountValue,
+    minOrderCents: updated.minOrderCents,
+    startsAt: updated.startsAt,
+    expiresAt: updated.expiresAt,
+    usageLimit: updated.usageLimit,
+    usedCount: updated.usedCount,
+    status: updated.status,
+    createdAt: updated.createdAt
+  });
+}));
+
+router.delete('/coupons/:id', asyncHandler(async (req, res) => {
+  const coupon = await prisma.coupon.findUnique({
+    where: { id: req.params.id }
+  });
+  if (!coupon) {
+    throw new ApiError(404, 'COUPON_NOT_FOUND');
+  }
+
+  await prisma.coupon.delete({ where: { id: req.params.id } });
+  res.json({ message: 'coupon deleted' });
 }));
 
 module.exports = router;

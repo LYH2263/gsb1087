@@ -81,12 +81,48 @@ const addressSchema = z.object({
 
 const checkoutSchema = z.object({
   addressId: z.string().min(1),
-  paymentMethod: z.enum(['WECHAT', 'ALIPAY', 'CARD', 'COD'])
+  paymentMethod: z.enum(['WECHAT', 'ALIPAY', 'CARD', 'COD']),
+  couponId: z.string().min(1).optional()
 });
 
 const reviewSchema = z.object({
   rating: z.number().int().min(1).max(5),
   reviewText: z.string().min(3).max(200)
+});
+
+const couponCreateSchema = z.object({
+  code: z.string().min(1).max(50).transform(v => v.toUpperCase().trim()),
+  name: z.string().min(1).max(100),
+  type: z.enum(['FIXED', 'PERCENT']),
+  discountValue: z.number().int().positive(),
+  minOrderCents: z.number().int().min(0).default(0),
+  startsAt: z.string().min(1).transform(v => new Date(v)),
+  expiresAt: z.string().min(1).transform(v => new Date(v)),
+  usageLimit: z.number().int().positive().nullable().optional()
+}).refine(data => data.expiresAt > data.startsAt, {
+  message: 'EXPIRES_BEFORE_STARTS',
+  path: ['expiresAt']
+}).refine(data => {
+  if (data.type === 'PERCENT') return data.discountValue >= 1 && data.discountValue <= 99;
+  return true;
+}, {
+  message: 'PERCENT_OUT_OF_RANGE',
+  path: ['discountValue']
+});
+
+const couponUpdateSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  status: z.enum(['ACTIVE', 'INACTIVE']).optional(),
+  type: z.enum(['FIXED', 'PERCENT']).optional(),
+  discountValue: z.number().int().positive().optional(),
+  minOrderCents: z.number().int().min(0).optional(),
+  startsAt: z.string().min(1).transform(v => new Date(v)).optional(),
+  expiresAt: z.string().min(1).transform(v => new Date(v)).optional(),
+  usageLimit: z.number().int().positive().nullable().optional()
+});
+
+const couponApplySchema = z.object({
+  code: z.string().min(1).max(50).transform(v => v.toUpperCase().trim())
 });
 
 module.exports = {
@@ -101,5 +137,8 @@ module.exports = {
   cartUpdateSchema,
   addressSchema,
   checkoutSchema,
-  reviewSchema
+  reviewSchema,
+  couponCreateSchema,
+  couponUpdateSchema,
+  couponApplySchema
 };
