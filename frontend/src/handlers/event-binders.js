@@ -9,6 +9,8 @@ import {
   addressSchema,
   adminBookSchema,
   adminCategorySchema,
+  adminCouponSchema,
+  couponCodeSchema,
   COVER_MAX_SIZE,
   COVER_TYPES
 } from '../validation/schemas.js';
@@ -140,6 +142,7 @@ export function bindEventHandlers({
   loadOrders,
   loadAddresses,
   loadAdmin,
+  loadCoupons,
   safeRender,
   openModal,
   closeModal,
@@ -258,7 +261,8 @@ export function bindEventHandlers({
       const data = getFormData(form);
       const parsed = checkoutSchema.parse({
         addressId: data.addressId,
-        paymentMethod: data.paymentMethod
+        paymentMethod: data.paymentMethod,
+        couponId: data.couponId || undefined
       });
       const submitBtn = form.querySelector('button[type="submit"]');
       const originalText = submitBtn?.textContent;
@@ -270,6 +274,7 @@ export function bindEventHandlers({
 
       try {
         await api.checkout(parsed);
+        state.cartCoupon = null;
         showToast('订单已生成，请完成支付', 'success');
         await loadCart();
         await loadOrders();
@@ -340,6 +345,52 @@ export function bindEventHandlers({
       await loadAdmin();
       safeRender();
       form.reset();
+    },
+    'coupon-code': async (form) => {
+      const data = getFormData(form);
+      const parsed = couponCodeSchema.parse({ code: data.code });
+      const coupon = await api.applyCoupon(parsed);
+      if (!coupon.available) {
+        showToast('该优惠券当前不可用', 'error');
+        return;
+      }
+      state.cartCoupon = coupon;
+      safeRender();
+      showToast(`已选择优惠券：${coupon.name}`, 'success');
+    },
+    'admin-coupon': async (form) => {
+      const data = getFormData(form);
+      const parsed = adminCouponSchema.parse({
+        code: data.code,
+        name: data.name,
+        type: data.type,
+        discountValue: data.discountValue,
+        minOrder: data.minOrder,
+        startsAt: data.startsAt,
+        expiresAt: data.expiresAt,
+        usageLimit: data.usageLimit || undefined
+      });
+      const minOrderCents = Math.round(parsed.minOrder * 100);
+      let discountValue;
+      if (parsed.type === 'FIXED') {
+        discountValue = Math.round(parsed.discountValue * 100);
+      } else {
+        discountValue = Math.round(parsed.discountValue);
+      }
+      await api.admin.createCoupon({
+        code: parsed.code,
+        name: parsed.name,
+        type: parsed.type,
+        discountValue,
+        minOrderCents,
+        startsAt: parsed.startsAt,
+        expiresAt: parsed.expiresAt,
+        usageLimit: parsed.usageLimit ?? null
+      });
+      showToast('优惠券已添加', 'success');
+      await loadAdmin();
+      safeRender();
+      form.reset();
     }
   };
 
@@ -386,6 +437,7 @@ export function bindEventHandlers({
     },
     'clear-cart': async () => {
       await api.clearCart();
+      state.cartCoupon = null;
       await loadCart();
       safeRender();
     },
@@ -490,6 +542,32 @@ export function bindEventHandlers({
       link.download = 'orders.csv';
       link.click();
       URL.revokeObjectURL(url);
+    },
+    'select-coupon': async (target) => {
+      const coupon = state.coupons.find((c) => c.id === target.dataset.id);
+      if (!coupon) return;
+      state.cartCoupon = coupon;
+      safeRender();
+      showToast(`已选择优惠券：${coupon.name}`, 'success');
+    },
+    'remove-coupon': async () => {
+      state.cartCoupon = null;
+      safeRender();
+    },
+    'deactivate-coupon': async (target) => {
+      await api.admin.updateCoupon(target.dataset.id, { status: 'INACTIVE' });
+      await loadAdmin();
+      safeRender();
+    },
+    'activate-coupon': async (target) => {
+      await api.admin.updateCoupon(target.dataset.id, { status: 'ACTIVE' });
+      await loadAdmin();
+      safeRender();
+    },
+    'delete-coupon': async (target) => {
+      await api.admin.deleteCoupon(target.dataset.id);
+      await loadAdmin();
+      safeRender();
     }
   };
 

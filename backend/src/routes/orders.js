@@ -13,6 +13,9 @@ function mapOrder(order) {
     status: order.status,
     paymentMethod: order.paymentMethod,
     total: fromCents(order.totalCents),
+    discount: fromCents(order.discountCents),
+    couponId: order.couponId || null,
+    couponName: order.coupon?.name || null,
     recipient: order.recipient,
     phone: order.phone,
     line1: order.line1,
@@ -21,6 +24,7 @@ function mapOrder(order) {
     postalCode: order.postalCode,
     rating: order.rating,
     reviewText: order.reviewText,
+    reviewedAt: order.reviewedAt,
     createdAt: order.createdAt,
     items: order.items.map((item) => ({
       id: item.id,
@@ -36,7 +40,7 @@ function mapOrder(order) {
 router.get('/', asyncHandler(async (req, res) => {
   const orders = await prisma.order.findMany({
     where: { userId: req.user.id },
-    include: { items: true },
+    include: { items: true, coupon: true },
     orderBy: { createdAt: 'desc' }
   });
 
@@ -72,10 +76,62 @@ router.post('/checkout', asyncHandler(async (req, res) => {
     }
   }
 
-  const totalCents = cartItems.reduce(
+  const subtotalCents = cartItems.reduce(
     (sum, item) => sum + item.book.priceCents * item.quantity,
     0
   );
+
+  let discountCents = 0;
+  let couponId = null;
+
+  if (payload.couponId) {
+    const coupon = await prisma.coupon.findUnique({
+      where: { id: payload.couponId }
+    });
+
+    if (!coupon) {
+      throw new ApiError(404, 'COUPON_NOT_FOUND');
+    }
+    if (coupon.status !== 'ACTIVE') {
+      throw new ApiError(400, 'COUPON_NOT_ACTIVE');
+    }
+
+    const now = new Date();
+    if (now > coupon.expiresAt) {
+      throw new ApiError(400, 'COUPON_EXPIRED');
+    }
+    if (now < coupon.startsAt) {
+      throw new ApiError(400, 'COUPON_NOT_STARTED');
+    }
+    if (coupon.usageLimit !== null && coupon.usedCount >= coupon.usageLimit) {
+      throw new ApiError(400, 'COUPON_USED_UP');
+    }
+
+    const existingUse = await prisma.order.findFirst({
+      where: {
+        userId: req.user.id,
+        couponId: coupon.id,
+        status: { not: 'CANCELED' }
+      }
+    });
+    if (existingUse) {
+      throw new ApiError(400, 'COUPON_ALREADY_USED');
+    }
+
+    if (subtotalCents < coupon.minOrderCents) {
+      throw new ApiError(400, 'COUPON_MIN_ORDER_NOT_MET');
+    }
+
+    if (coupon.type === 'FIXED') {
+      discountCents = Math.min(coupon.discountValue, subtotalCents);
+    } else {
+      discountCents = Math.round(subtotalCents * coupon.discountValue / 100);
+    }
+
+    couponId = coupon.id;
+  }
+
+  const totalCents = Math.max(0, subtotalCents - discountCents);
 
   const order = await prisma.$transaction(async (tx) => {
     const created = await tx.order.create({
@@ -83,6 +139,8 @@ router.post('/checkout', asyncHandler(async (req, res) => {
         userId: req.user.id,
         paymentMethod: payload.paymentMethod,
         totalCents,
+        discountCents,
+        couponId,
         recipient: address.recipient,
         phone: address.phone,
         line1: address.line1,
@@ -116,12 +174,19 @@ router.post('/checkout', asyncHandler(async (req, res) => {
       where: { userId: req.user.id }
     });
 
+    if (couponId) {
+      await tx.coupon.update({
+        where: { id: couponId },
+        data: { usedCount: { increment: 1 } }
+      });
+    }
+
     return created;
   });
 
   const fullOrder = await prisma.order.findUnique({
     where: { id: order.id },
-    include: { items: true }
+    include: { items: true, coupon: true }
   });
 
   res.status(201).json(mapOrder(fullOrder));
@@ -157,7 +222,7 @@ router.post('/:id/pay', asyncHandler(async (req, res) => {
 
   const updated = await prisma.order.findUnique({
     where: { id: order.id },
-    include: { items: true }
+    include: { items: true, coupon: true }
   });
 
   res.json(mapOrder(updated));
@@ -187,6 +252,13 @@ router.post('/:id/cancel', asyncHandler(async (req, res) => {
       await tx.book.update({
         where: { id: item.bookId },
         data: { stock: { increment: item.quantity } }
+      });
+    }
+
+    if (order.couponId) {
+      await tx.coupon.update({
+        where: { id: order.couponId },
+        data: { usedCount: { decrement: 1 } }
       });
     }
   });

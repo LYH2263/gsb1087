@@ -13,6 +13,8 @@ export const state = {
     maxPrice: ''
   },
   cart: [],
+  coupons: [],
+  cartCoupon: null,
   orders: [],
   addresses: [],
   loading: {
@@ -28,7 +30,8 @@ export const state = {
     categories: [],
     orders: [],
     stats: null,
-    editingBook: null
+    editingBook: null,
+    coupons: []
   },
   profile: {
     editingAddress: null

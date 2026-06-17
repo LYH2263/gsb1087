@@ -42,7 +42,8 @@ export const addressSchema = z.object({
 
 export const checkoutSchema = z.object({
   addressId: z.string().min(1, '请选择配送地址'),
-  paymentMethod: z.string().min(1, '请选择支付方式')
+  paymentMethod: z.string().min(1, '请选择支付方式'),
+  couponId: z.string().min(1).optional()
 });
 
 function toNumber(value) {
@@ -97,3 +98,27 @@ export const COVER_TYPES = [
   'image/gif',
   'image/svg+xml'
 ];
+
+export const adminCouponSchema = z.object({
+  code: z.string().min(1, '请输入优惠码').max(50, '优惠码过长'),
+  name: z.string().min(1, '请输入优惠券名称').max(100, '名称过长'),
+  type: z.enum(['FIXED', 'PERCENT'], { required_error: '请选择类型' }),
+  discountValue: z.preprocess(
+    toNumber,
+    z.number({ invalid_type_error: '请输入面值' }).positive('面值需大于 0')
+  ),
+  minOrder: z.preprocess(
+    toNumber,
+    z.number({ invalid_type_error: '请输入最低消费' }).min(0, '最低消费不能为负数')
+  ),
+  startsAt: z.string().min(1, '请选择开始时间'),
+  expiresAt: z.string().min(1, '请选择结束时间'),
+  usageLimit: z.preprocess(
+    (v) => (v === '' || v === null || v === undefined ? undefined : toNumber(v)),
+    z.number({ invalid_type_error: '请输入使用次数' }).int('需为整数').positive('需为正整数').optional()
+  )
+});
+
+export const couponCodeSchema = z.object({
+  code: z.string().min(1, '请输入优惠码').max(50, '优惠码过长')
+});

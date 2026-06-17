@@ -39,7 +39,14 @@ const toastMap = [
   [/invalid_file_type/i, '仅支持 JPG/PNG/WEBP/GIF/SVG 格式图片'],
   [/file_too_large/i, '图片大小不能超过 2MB'],
   [/forbidden/i, '没有权限执行该操作'],
-  [/internal server error/i, '服务器开小差了，请稍后再试']
+  [/internal server error/i, '服务器开小差了，请稍后再试'],
+  [/coupon not found/i, '优惠码不存在'],
+  [/coupon expired/i, '优惠券已过期'],
+  [/coupon not active/i, '优惠券已停用'],
+  [/coupon used up/i, '优惠券已领完'],
+  [/coupon already used/i, '您已使用过该优惠券'],
+  [/coupon min order/i, '未达到优惠券使用门槛'],
+  [/coupon code exists/i, '优惠码已存在']
 ];
 
 function toChineseToast(message) {
@@ -119,6 +126,11 @@ async function loadAddresses() {
   state.addresses = await api.getAddresses();
 }
 
+async function loadCoupons() {
+  if (!state.user) return;
+  state.coupons = await api.getCoupons();
+}
+
 async function loadAdmin() {
   if (!state.user || state.user.role !== 'ADMIN') return;
   state.loading.admin = true;
@@ -126,6 +138,7 @@ async function loadAdmin() {
   state.admin.categories = await api.admin.getCategories();
   state.admin.orders = await api.admin.getOrders();
   state.admin.stats = await api.admin.getOrderStats();
+  state.admin.coupons = await api.admin.getCoupons();
   state.loading.admin = false;
 }
 
@@ -137,6 +150,7 @@ const viewLoaders = {
   cart: async () => {
     await loadCart();
     await loadAddresses();
+    await loadCoupons();
   },
   orders: loadOrders,
   profile: loadAddresses,
@@ -251,6 +265,7 @@ bindEventHandlers({
   loadOrders,
   loadAddresses,
   loadAdmin,
+  loadCoupons,
   safeRender,
   openModal,
   closeModal,
