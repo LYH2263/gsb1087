@@ -89,6 +89,42 @@ export const reviewSchema = z.object({
   reviewText: z.string().min(3, '至少 3 个字').max(200, '最多 200 字')
 });
 
+export const adminCouponSchema = z.object({
+  code: z.string().min(2, '券码至少 2 位').max(20, '券码最长 20 位'),
+  name: z.string().min(1, '请输入优惠券名称').max(50, '名称最长 50 字'),
+  type: z.enum(['FIXED', 'PERCENTAGE'], { required_error: '请选择优惠券类型' }),
+  value: z.preprocess(
+    toNumber,
+    z.number({ invalid_type_error: '请输入面值' }).positive('面值必须大于 0')
+  ),
+  minAmount: z.preprocess(
+    toNumber,
+    z.number({ invalid_type_error: '请输入最低消费' }).min(0, '最低消费不能为负')
+  ).optional(),
+  maxDiscount: z.preprocess(
+    toNumber,
+    z.number({ invalid_type_error: '请输入最大折扣' }).positive('最大折扣需大于 0')
+  ).optional(),
+  startsAt: z.string().optional(),
+  expiresAt: z.string().optional(),
+  usageLimit: z.preprocess(
+    toNumber,
+    z.number({ invalid_type_error: '请输入总使用次数' }).int().positive('总使用次数需大于 0')
+  ).optional(),
+  perUserLimit: z.preprocess(
+    toNumber,
+    z.number({ invalid_type_error: '请输入每人限用次数' }).int().positive('每人限用次数需大于 0')
+  ).optional()
+});
+
+export const applyCouponSchema = z.object({
+  code: z.string().min(1, '请输入券码')
+});
+
+export const couponCheckoutSchema = checkoutSchema.extend({
+  couponId: z.string().optional()
+});
+
 export const COVER_MAX_SIZE = 2 * 1024 * 1024;
 export const COVER_TYPES = [
   'image/png',

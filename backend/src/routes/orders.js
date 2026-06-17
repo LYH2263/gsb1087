@@ -2,8 +2,8 @@ const express = require('express');
 const prisma = require('../db');
 const asyncHandler = require('../utils/asyncHandler');
 const { ApiError } = require('../errors');
-const { checkoutSchema, reviewSchema } = require('../validators');
-const { fromCents } = require('../utils/money');
+const { couponCheckoutSchema, reviewSchema } = require('../validators');
+const { fromCents, toCents } = require('../utils/money');
 
 const router = express.Router();
 
@@ -12,7 +12,15 @@ function mapOrder(order) {
     id: order.id,
     status: order.status,
     paymentMethod: order.paymentMethod,
+    subtotal: fromCents(order.subtotalCents),
+    discount: fromCents(order.discountCents),
     total: fromCents(order.totalCents),
+    coupon: order.coupon ? {
+      id: order.coupon.id,
+      code: order.coupon.code,
+      name: order.coupon.name,
+      type: order.coupon.type
+    } : null,
     recipient: order.recipient,
     phone: order.phone,
     line1: order.line1,
@@ -36,7 +44,7 @@ function mapOrder(order) {
 router.get('/', asyncHandler(async (req, res) => {
   const orders = await prisma.order.findMany({
     where: { userId: req.user.id },
-    include: { items: true },
+    include: { items: true, coupon: true },
     orderBy: { createdAt: 'desc' }
   });
 
@@ -44,7 +52,7 @@ router.get('/', asyncHandler(async (req, res) => {
 }));
 
 router.post('/checkout', asyncHandler(async (req, res) => {
-  const payload = checkoutSchema.parse(req.body);
+  const payload = couponCheckoutSchema.parse(req.body);
 
   const address = await prisma.address.findUnique({
     where: { id: payload.addressId }
@@ -72,17 +80,82 @@ router.post('/checkout', asyncHandler(async (req, res) => {
     }
   }
 
-  const totalCents = cartItems.reduce(
+  const subtotalCents = cartItems.reduce(
     (sum, item) => sum + item.book.priceCents * item.quantity,
     0
   );
+
+  let discountCents = 0;
+  let coupon = null;
+
+  if (payload.couponId) {
+    coupon = await prisma.coupon.findUnique({
+      where: { id: payload.couponId },
+      include: {
+        _count: {
+          select: { userCoupons: { where: { usedAt: { not: null } } } }
+        }
+      }
+    });
+
+    if (!coupon) {
+      throw new ApiError(404, 'COUPON_NOT_FOUND');
+    }
+
+    const now = new Date();
+    if (coupon.status !== 'ACTIVE') {
+      throw new ApiError(400, 'COUPON_INACTIVE');
+    }
+    if (coupon.startsAt && new Date(coupon.startsAt) > now) {
+      throw new ApiError(400, 'COUPON_NOT_STARTED');
+    }
+    if (coupon.expiresAt && new Date(coupon.expiresAt) < now) {
+      throw new ApiError(400, 'COUPON_EXPIRED');
+    }
+    if (subtotalCents < coupon.minAmountCents) {
+      throw new ApiError(400, 'COUPON_BELOW_THRESHOLD');
+    }
+    if (coupon.usageLimit !== null && coupon._count.userCoupons >= coupon.usageLimit) {
+      throw new ApiError(400, 'COUPON_USAGE_LIMIT_REACHED');
+    }
+
+    const userUsageCount = await prisma.userCoupon.count({
+      where: {
+        userId: req.user.id,
+        couponId: coupon.id,
+        usedAt: { not: null }
+      }
+    });
+
+    if (coupon.perUserLimit !== null && userUsageCount >= coupon.perUserLimit) {
+      throw new ApiError(400, 'COUPON_ALREADY_USED');
+    }
+
+    if (coupon.type === 'FIXED') {
+      discountCents = coupon.value;
+    } else if (coupon.type === 'PERCENTAGE') {
+      discountCents = Math.floor(subtotalCents * coupon.value / 100);
+      if (coupon.maxDiscountCents && discountCents > coupon.maxDiscountCents) {
+        discountCents = coupon.maxDiscountCents;
+      }
+    }
+
+    if (discountCents > subtotalCents) {
+      discountCents = subtotalCents;
+    }
+  }
+
+  const totalCents = Math.max(0, subtotalCents - discountCents);
 
   const order = await prisma.$transaction(async (tx) => {
     const created = await tx.order.create({
       data: {
         userId: req.user.id,
         paymentMethod: payload.paymentMethod,
+        subtotalCents,
+        discountCents,
         totalCents,
+        couponId: coupon?.id || null,
         recipient: address.recipient,
         phone: address.phone,
         line1: address.line1,
@@ -116,12 +189,23 @@ router.post('/checkout', asyncHandler(async (req, res) => {
       where: { userId: req.user.id }
     });
 
+    if (coupon) {
+      await tx.userCoupon.create({
+        data: {
+          userId: req.user.id,
+          couponId: coupon.id,
+          orderId: created.id,
+          usedAt: new Date()
+        }
+      });
+    }
+
     return created;
   });
 
   const fullOrder = await prisma.order.findUnique({
     where: { id: order.id },
-    include: { items: true }
+    include: { items: true, coupon: true }
   });
 
   res.status(201).json(mapOrder(fullOrder));
