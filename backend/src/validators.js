@@ -89,6 +89,29 @@ const reviewSchema = z.object({
   reviewText: z.string().min(3).max(200)
 });
 
+const couponCreateSchema = z.object({
+  code: z.string().min(2, '券码至少 2 位').max(20, '券码最长 20 位'),
+  name: z.string().min(1, '优惠券名称必填').max(50, '名称最长 50 字'),
+  type: z.enum(['FIXED', 'PERCENTAGE'], { required_error: '请选择优惠券类型' }),
+  value: z.number().int().positive('面值必须大于 0'),
+  minAmount: z.number().int().min(0, '最低消费不能为负').optional(),
+  maxDiscount: z.number().int().positive('最大折扣需大于 0').optional(),
+  startsAt: z.string().optional(),
+  expiresAt: z.string().optional(),
+  usageLimit: z.number().int().positive('总使用次数需大于 0').optional(),
+  perUserLimit: z.number().int().positive('每人限用次数需大于 0').optional()
+});
+
+const couponUpdateSchema = couponCreateSchema.partial();
+
+const applyCouponSchema = z.object({
+  code: z.string().min(1, '请输入券码')
+});
+
+const couponCheckoutSchema = checkoutSchema.extend({
+  couponId: z.string().optional()
+});
+
 module.exports = {
   registerSchema,
   loginSchema,
@@ -101,5 +124,9 @@ module.exports = {
   cartUpdateSchema,
   addressSchema,
   checkoutSchema,
-  reviewSchema
+  reviewSchema,
+  couponCreateSchema,
+  couponUpdateSchema,
+  applyCouponSchema,
+  couponCheckoutSchema
 };

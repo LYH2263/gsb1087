@@ -5,7 +5,7 @@ const multer = require('multer');
 const prisma = require('../db');
 const asyncHandler = require('../utils/asyncHandler');
 const { ApiError } = require('../errors');
-const { bookSchema, bookUpdateSchema, categorySchema } = require('../validators');
+const { bookSchema, bookUpdateSchema, categorySchema, couponCreateSchema, couponUpdateSchema } = require('../validators');
 const { toCents, fromCents } = require('../utils/money');
 
 const router = express.Router();
@@ -348,6 +348,129 @@ router.post('/orders/:id/refund', asyncHandler(async (req, res) => {
   });
 
   res.json({ message: 'order refunded' });
+}));
+
+function mapCoupon(coupon) {
+  return {
+    id: coupon.id,
+    code: coupon.code,
+    name: coupon.name,
+    type: coupon.type,
+    value: coupon.type === 'FIXED' ? fromCents(coupon.value) : coupon.value,
+    minAmount: fromCents(coupon.minAmountCents),
+    maxDiscount: coupon.maxDiscountCents ? fromCents(coupon.maxDiscountCents) : null,
+    startsAt: coupon.startsAt,
+    expiresAt: coupon.expiresAt,
+    usageLimit: coupon.usageLimit,
+    perUserLimit: coupon.perUserLimit,
+    status: coupon.status,
+    createdAt: coupon.createdAt,
+    updatedAt: coupon.updatedAt,
+    usedCount: coupon._count?.userCoupons || 0
+  };
+}
+
+router.get('/coupons', asyncHandler(async (req, res) => {
+  const coupons = await prisma.coupon.findMany({
+    orderBy: { createdAt: 'desc' },
+    include: {
+      _count: {
+        select: { userCoupons: { where: { usedAt: { not: null } } } }
+      }
+    }
+  });
+  res.json(coupons.map(mapCoupon));
+}));
+
+router.post('/coupons', asyncHandler(async (req, res) => {
+  const payload = couponCreateSchema.parse(req.body);
+
+  const exists = await prisma.coupon.findUnique({
+    where: { code: payload.code.toUpperCase() }
+  });
+  if (exists) {
+    throw new ApiError(409, 'COUPON_CODE_EXISTS');
+  }
+
+  const data = {
+    code: payload.code.toUpperCase(),
+    name: payload.name,
+    type: payload.type,
+    value: payload.type === 'FIXED' ? toCents(payload.value) : payload.value,
+    minAmountCents: payload.minAmount !== undefined ? toCents(payload.minAmount) : 0,
+    maxDiscountCents: payload.maxDiscount !== undefined ? toCents(payload.maxDiscount) : null,
+    startsAt: payload.startsAt ? new Date(payload.startsAt) : null,
+    expiresAt: payload.expiresAt ? new Date(payload.expiresAt) : null,
+    usageLimit: payload.usageLimit || null,
+    perUserLimit: payload.perUserLimit || null
+  };
+
+  if (payload.type === 'FIXED') {
+    data.minAmountCents = Math.max(data.minAmountCents, toCents(payload.value) + 1);
+  }
+
+  const coupon = await prisma.coupon.create({ data });
+  const fullCoupon = await prisma.coupon.findUnique({
+    where: { id: coupon.id },
+    include: { _count: { select: { userCoupons: { where: { usedAt: { not: null } } } } } }
+  });
+  res.status(201).json(mapCoupon(fullCoupon));
+}));
+
+router.put('/coupons/:id', asyncHandler(async (req, res) => {
+  const payload = couponUpdateSchema.parse(req.body);
+
+  const existing = await prisma.coupon.findUnique({
+    where: { id: req.params.id }
+  });
+  if (!existing) {
+    throw new ApiError(404, 'COUPON_NOT_FOUND');
+  }
+
+  const data = {};
+  if (payload.code !== undefined) {
+    const code = payload.code.toUpperCase();
+    const codeExists = await prisma.coupon.findUnique({ where: { code } });
+    if (codeExists && codeExists.id !== req.params.id) {
+      throw new ApiError(409, 'COUPON_CODE_EXISTS');
+    }
+    data.code = code;
+  }
+  if (payload.name !== undefined) data.name = payload.name;
+  if (payload.type !== undefined) data.type = payload.type;
+  if (payload.value !== undefined) {
+    const effectiveType = payload.type || existing.type;
+    data.value = effectiveType === 'FIXED' ? toCents(payload.value) : payload.value;
+  }
+  if (payload.minAmount !== undefined) data.minAmountCents = toCents(payload.minAmount);
+  if (payload.maxDiscount !== undefined) data.maxDiscountCents = payload.maxDiscount ? toCents(payload.maxDiscount) : null;
+  if (payload.startsAt !== undefined) data.startsAt = payload.startsAt ? new Date(payload.startsAt) : null;
+  if (payload.expiresAt !== undefined) data.expiresAt = payload.expiresAt ? new Date(payload.expiresAt) : null;
+  if (payload.usageLimit !== undefined) data.usageLimit = payload.usageLimit || null;
+  if (payload.perUserLimit !== undefined) data.perUserLimit = payload.perUserLimit || null;
+
+  const coupon = await prisma.coupon.update({
+    where: { id: req.params.id },
+    data,
+    include: { _count: { select: { userCoupons: { where: { usedAt: { not: null } } } } } }
+  });
+  res.json(mapCoupon(coupon));
+}));
+
+router.post('/coupons/:id/activate', asyncHandler(async (req, res) => {
+  const coupon = await prisma.coupon.update({
+    where: { id: req.params.id },
+    data: { status: 'ACTIVE' }
+  });
+  res.json({ message: 'coupon activated', id: coupon.id });
+}));
+
+router.post('/coupons/:id/deactivate', asyncHandler(async (req, res) => {
+  const coupon = await prisma.coupon.update({
+    where: { id: req.params.id },
+    data: { status: 'INACTIVE' }
+  });
+  res.json({ message: 'coupon deactivated', id: coupon.id });
 }));
 
 module.exports = router;
