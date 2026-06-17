@@ -215,6 +215,23 @@ export const api = {
   deleteAddress(id) {
     return request(`/addresses/${id}`, { method: 'DELETE' });
   },
+  getCoupons() {
+    return request('/coupons');
+  },
+  redeemCoupon(code) {
+    return request('/coupons/redeem', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code })
+    });
+  },
+  calculateCoupon(userCouponId) {
+    return request('/coupons/calculate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userCouponId })
+    });
+  },
   admin: {
     getBooks(params = {}) {
       const query = new URLSearchParams(params).toString();
@@ -283,6 +300,29 @@ export const api = {
         method: 'POST',
         body: formData
       });
+    },
+    getCoupons() {
+      return request('/admin/coupons');
+    },
+    createCoupon(payload) {
+      return request('/admin/coupons', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    },
+    updateCoupon(id, payload) {
+      return request(`/admin/coupons/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    },
+    activateCoupon(id) {
+      return request(`/admin/coupons/${id}/activate`, { method: 'POST' });
+    },
+    deactivateCoupon(id) {
+      return request(`/admin/coupons/${id}/deactivate`, { method: 'POST' });
     }
   }
 };

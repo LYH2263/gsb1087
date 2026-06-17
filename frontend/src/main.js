@@ -39,7 +39,17 @@ const toastMap = [
   [/invalid_file_type/i, '仅支持 JPG/PNG/WEBP/GIF/SVG 格式图片'],
   [/file_too_large/i, '图片大小不能超过 2MB'],
   [/forbidden/i, '没有权限执行该操作'],
-  [/internal server error/i, '服务器开小差了，请稍后再试']
+  [/internal server error/i, '服务器开小差了，请稍后再试'],
+  [/coupon not found|coupon_not_found/i, '优惠券不存在'],
+  [/coupon inactive|coupon_inactive/i, '优惠券已失效'],
+  [/coupon expired|coupon_expired/i, '优惠券已过期'],
+  [/coupon not started|coupon_not_started/i, '优惠券未到使用时间'],
+  [/coupon already redeemed|coupon_already_redeemed/i, '您已领取过该优惠券'],
+  [/coupon sold out|coupon_sold_out/i, '优惠券已被领完'],
+  [/coupon already used|coupon_already_used/i, '优惠券已使用'],
+  [/coupon not eligible|coupon_not_eligible/i, '未达到优惠券使用门槛'],
+  [/user coupon not found|user_coupon_not_found/i, '优惠券不存在'],
+  [/coupon code exists|coupon_code_exists/i, '券码已存在']
 ];
 
 function toChineseToast(message) {
@@ -109,6 +119,34 @@ async function loadCart() {
   state.cart = await api.getCart();
 }
 
+async function loadCoupons() {
+  if (!state.user) return;
+  state.userCoupons = await api.getCoupons();
+  if (state.selectedUserCouponId) {
+    const stillAvailable = state.userCoupons.find(
+      (c) => c.id === state.selectedUserCouponId && c.status === 'available'
+    );
+    if (!stillAvailable) {
+      clearCouponSelection();
+    }
+  }
+}
+
+async function applyCoupon(userCouponId) {
+  if (!userCouponId) {
+    clearCouponSelection();
+    return;
+  }
+  const result = await api.calculateCoupon(userCouponId);
+  state.selectedUserCouponId = userCouponId;
+  state.couponCalculation = result;
+}
+
+function clearCouponSelection() {
+  state.selectedUserCouponId = null;
+  state.couponCalculation = null;
+}
+
 async function loadOrders() {
   if (!state.user) return;
   state.orders = await api.getOrders();
@@ -124,6 +162,7 @@ async function loadAdmin() {
   state.loading.admin = true;
   state.admin.books = await api.admin.getBooks();
   state.admin.categories = await api.admin.getCategories();
+  state.admin.coupons = await api.admin.getCoupons();
   state.admin.orders = await api.admin.getOrders();
   state.admin.stats = await api.admin.getOrderStats();
   state.loading.admin = false;
@@ -137,6 +176,7 @@ const viewLoaders = {
   cart: async () => {
     await loadCart();
     await loadAddresses();
+    await loadCoupons();
   },
   orders: loadOrders,
   profile: loadAddresses,
@@ -250,6 +290,7 @@ bindEventHandlers({
   loadCart,
   loadOrders,
   loadAddresses,
+  loadCoupons,
   loadAdmin,
   safeRender,
   openModal,
@@ -257,7 +298,9 @@ bindEventHandlers({
   openLoginModal,
   openRegisterModal,
   openForgotModal,
-  openResetModal
+  openResetModal,
+  applyCoupon,
+  clearCouponSelection
 });
 
 async function bootstrap() {
