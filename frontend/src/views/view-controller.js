@@ -148,7 +148,9 @@ export function createViewController({
       return;
     }
 
-    const total = state.cart.reduce((sum, item) => sum + item.book.price * item.quantity, 0);
+    const subtotal = state.cart.reduce((sum, item) => sum + item.book.price * item.quantity, 0);
+    const discount = state.couponDiscount || 0;
+    const total = Math.max(0, subtotal - discount);
 
     const cartList = state.cart
       .map(
@@ -179,20 +181,92 @@ export function createViewController({
       )
       .join('');
 
+    const selectedCoupon = state.coupons.find((c) => c.id === state.selectedCouponId);
+
+    const couponCards = state.coupons
+      .map(
+        (coupon) => {
+          const isSelected = coupon.id === state.selectedCouponId;
+          const isDisabled = !coupon.isAvailable;
+          const discountText = coupon.type === 'FIXED'
+            ? `减 ${formatCurrency(coupon.value)}`
+            : `${coupon.percent}% 折扣`;
+          const maxDiscountText = coupon.maxDiscount ? `，最高减 ${formatCurrency(coupon.maxDiscount)}` : '';
+          return `
+          <div class="border rounded-xl p-4 cursor-pointer transition ${isSelected ? 'border-teal-500 bg-teal-50 ring-2 ring-teal-200' : 'border-slate-200 hover:border-slate-300'} ${isDisabled ? 'opacity-50 cursor-not-allowed bg-slate-50' : ''}"
+               data-action="${isDisabled ? '' : 'select-coupon'}" data-id="${coupon.id}" data-disabled="${isDisabled}">
+            <div class="flex items-start justify-between gap-3">
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2">
+                  <span class="font-bold text-lg text-teal-600">${discountText}</span>
+                  ${coupon.minAmount > 0 ? `<span class="text-xs text-slate-500">满 ${formatCurrency(coupon.minAmount)} 可用</span>` : ''}
+                </div>
+                <p class="text-sm font-medium text-slate-800 mt-1 truncate">${coupon.name}</p>
+                <p class="text-xs text-slate-500 mt-0.5">券码：${coupon.code}${maxDiscountText}</p>
+                ${coupon.expiresAt ? `<p class="text-xs text-slate-400 mt-1">有效期至 ${new Date(coupon.expiresAt).toLocaleDateString()}</p>` : ''}
+              </div>
+              <div class="text-right shrink-0">
+                ${isDisabled
+                  ? `<span class="text-xs text-slate-400 block">${coupon.reason || '不可用'}</span>`
+                  : isSelected
+                    ? `<span class="badge badge-active">已选</span>`
+                    : `<span class="badge">可选</span>`
+                }
+              </div>
+            </div>
+          </div>
+        `;
+        }
+      )
+      .join('');
+
     viewContent.innerHTML = `
       <div class="card p-6 space-y-4">
         ${state.cart.length === 0 ? '<p class="text-slate-500">购物车为空</p>' : cartList}
         ${state.cart.length > 0 ? `<div class="flex flex-wrap items-center justify-between gap-3">
-          <p class="text-lg font-semibold">合计 ${formatCurrency(total)}</p>
+          <div class="space-y-1">
+            <p class="text-sm text-slate-500">共 ${state.cart.reduce((s, i) => s + i.quantity, 0)} 件商品</p>
+            <p class="text-lg font-semibold">商品小计 ${formatCurrency(subtotal)}</p>
+          </div>
           <div class="flex gap-2">
             <button class="btn-outline" data-action="clear-cart">清空购物车</button>
           </div>
         </div>` : ''}
       </div>
 
+      ${state.cart.length > 0 ? `
+      <div class="card p-6 space-y-4">
+        <div class="flex items-center justify-between">
+          <h3 class="text-lg font-semibold">优惠券</h3>
+          <span class="text-sm text-slate-500">${state.coupons.filter((c) => c.isAvailable).length} 张可用</span>
+        </div>
+
+        <form data-form="apply-coupon" class="flex gap-2" novalidate>
+          <input class="input flex-1" name="couponCode" placeholder="输入券码兑换" />
+          <button class="btn-outline" type="submit">兑换</button>
+        </form>
+
+        <div class="grid md:grid-cols-2 gap-3 max-h-80 overflow-y-auto pr-1">
+          ${couponCards || '<p class="text-slate-500 col-span-2 text-center py-6">暂无优惠券</p>'}
+        </div>
+
+        ${selectedCoupon ? `
+        <div class="bg-teal-50 border border-teal-200 rounded-xl p-3 flex items-center justify-between">
+          <div>
+            <p class="text-sm font-medium text-teal-800">已使用：${selectedCoupon.name}</p>
+            <p class="text-xs text-teal-600">抵扣 ${formatCurrency(discount)}</p>
+          </div>
+          <button class="btn-outline text-sm" data-action="remove-coupon">不使用</button>
+        </div>
+        ` : ''}
+      </div>
+      ` : ''}
+
+      ${state.cart.length > 0 ? `
       <div class="card p-6 space-y-4">
         <h3 class="text-lg font-semibold">订单确认</h3>
         <form data-form="checkout" class="space-y-3" novalidate>
+          <input type="hidden" name="couponId" value="${state.selectedCouponId || ''}" />
           <div class="space-y-1">
             <select class="input input-lg" name="addressId" required>
               <option value="">选择配送地址</option>
@@ -210,11 +284,30 @@ export function createViewController({
               <input type="radio" name="paymentMethod" value="COD" /> 货到付款
             </label>
           </div>
+
+          <div class="border-t border-slate-200 pt-4 space-y-2">
+            <div class="flex justify-between text-sm">
+              <span class="text-slate-500">商品小计</span>
+              <span>${formatCurrency(subtotal)}</span>
+            </div>
+            ${discount > 0 ? `
+            <div class="flex justify-between text-sm">
+              <span class="text-slate-500">优惠券抵扣</span>
+              <span class="text-rose-500 font-medium">-${formatCurrency(discount)}</span>
+            </div>
+            ` : ''}
+            <div class="flex justify-between pt-2 border-t border-dashed border-slate-200">
+              <span class="font-semibold">应付金额</span>
+              <span class="text-xl font-bold text-teal-600">${formatCurrency(total)}</span>
+            </div>
+          </div>
+
           <div class="flex justify-end">
             <button class="btn-primary" type="submit">生成待支付订单</button>
           </div>
         </form>
       </div>
+      ` : ''}
     `;
   }
 
@@ -244,10 +337,12 @@ export function createViewController({
             <div>
               <p class="text-xs text-slate-400">订单号 ${order.id}</p>
               <h3 class="text-lg font-semibold">${formatStatus(order.status)}</h3>
+              ${order.couponCode ? `<p class="text-xs text-teal-600">优惠券：${order.couponName} (${order.couponCode})</p>` : ''}
             </div>
             <div class="text-right">
               <p class="text-sm text-slate-500">金额</p>
               <p class="text-lg font-semibold">${formatCurrency(order.total)}</p>
+              ${order.discount ? `<p class="text-xs text-rose-500">已优惠 ${formatCurrency(order.discount)}</p>` : ''}
             </div>
           </div>
           <div class="space-y-3">
@@ -384,6 +479,7 @@ export function createViewController({
       <div class="flex flex-wrap gap-2">
         <button class="btn-outline" data-action="admin-tab" data-tab="books">书籍管理</button>
         <button class="btn-outline" data-action="admin-tab" data-tab="categories">分类管理</button>
+        <button class="btn-outline" data-action="admin-tab" data-tab="coupons">优惠券管理</button>
         <button class="btn-outline" data-action="admin-tab" data-tab="orders">订单管理</button>
       </div>
     `;
@@ -491,6 +587,102 @@ export function createViewController({
       `;
     }
 
+    if (state.admin.tab === 'coupons') {
+      const editing = state.admin.editingCoupon;
+      const couponRows = state.admin.coupons
+        .map(
+          (coupon) => {
+            const discountText = coupon.type === 'FIXED'
+              ? `减 ${formatCurrency(coupon.value)}`
+              : `${coupon.percent}% 折扣`;
+            const minAmountText = coupon.minAmount > 0 ? `满 ${formatCurrency(coupon.minAmount)}` : '无门槛';
+            const progressText = coupon.totalQuantity > 0
+              ? `${coupon.usedQuantity}/${coupon.totalQuantity}`
+              : `${coupon.usedQuantity}/不限`;
+            return `
+        <div class="border border-slate-200 rounded-xl p-4 flex flex-col gap-3 hover-card">
+          <div class="flex justify-between items-start">
+            <div>
+              <h4 class="font-semibold">${coupon.name}</h4>
+              <p class="text-sm text-slate-500">券码：${coupon.code}</p>
+            </div>
+            <span class="badge ${coupon.status === 'ACTIVE' ? 'badge-active' : 'badge-inactive'}">${coupon.status === 'ACTIVE' ? '启用中' : '已停用'}</span>
+          </div>
+          <div class="flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-600">
+            <span>类型：${discountText}</span>
+            <span>门槛：${minAmountText}</span>
+            <span>发放：${progressText}</span>
+            <span>每人限领：${coupon.perUserLimit} 次</span>
+            ${coupon.maxDiscount ? `<span>最高减：${formatCurrency(coupon.maxDiscount)}</span>` : ''}
+            ${coupon.startsAt ? `<span>生效：${new Date(coupon.startsAt).toLocaleString()}</span>` : ''}
+            ${coupon.expiresAt ? `<span>到期：${new Date(coupon.expiresAt).toLocaleString()}</span>` : ''}
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <button class="btn-outline" data-action="edit-coupon" data-id="${coupon.id}">编辑</button>
+            ${coupon.status === 'ACTIVE'
+              ? `<button class="btn-outline" data-action="deactivate-coupon" data-id="${coupon.id}">停用</button>`
+              : `<button class="btn-outline" data-action="activate-coupon" data-id="${coupon.id}">启用</button>`}
+            <button class="btn-outline" data-action="delete-coupon" data-id="${coupon.id}">删除</button>
+          </div>
+        </div>
+      `;
+          }
+        )
+        .join('');
+
+      content = `
+        <div class="card p-6 space-y-4">
+          <h3 class="text-lg font-semibold">${editing ? '编辑优惠券' : '新增优惠券'}</h3>
+          <form data-form="admin-coupon" class="grid md:grid-cols-2 gap-3" novalidate>
+            <input type="hidden" name="couponId" value="${editing?.id || ''}" />
+            <div class="space-y-1">
+              <input class="input" name="name" placeholder="优惠券名称" value="${escapeHtmlAttr(editing?.name || '')}" required />
+            </div>
+            <div class="space-y-1">
+              <input class="input" name="code" placeholder="券码（大写字母、数字）" value="${escapeHtmlAttr(editing?.code || '')}" required />
+            </div>
+            <div class="space-y-1">
+              <select class="input" name="type" data-action="coupon-type-change" required>
+                <option value="FIXED" ${editing?.type === 'FIXED' ? 'selected' : ''}>固定减免</option>
+                <option value="PERCENT" ${editing?.type === 'PERCENT' ? 'selected' : ''}>折扣比例</option>
+              </select>
+            </div>
+            <div class="space-y-1" data-coupon-field="value" style="${editing?.type === 'PERCENT' ? 'display:none;' : ''}">
+              <input class="input" name="value" type="number" step="0.01" placeholder="减免金额（元）" value="${editing?.value || ''}" />
+            </div>
+            <div class="space-y-1" data-coupon-field="percent" style="${editing?.type === 'PERCENT' ? '' : 'display:none;'}">
+              <input class="input" name="percent" type="number" min="1" max="99" placeholder="折扣比例（1-99）" value="${editing?.percent || ''}" />
+            </div>
+            <div class="space-y-1">
+              <input class="input" name="minAmount" type="number" step="0.01" placeholder="使用门槛（元，0 表示无门槛）" value="${editing?.minAmount || 0}" />
+            </div>
+            <div class="space-y-1">
+              <input class="input" name="maxDiscount" type="number" step="0.01" placeholder="最高优惠（元，可选）" value="${editing?.maxDiscount || ''}" />
+            </div>
+            <div class="space-y-1">
+              <input class="input" name="totalQuantity" type="number" min="0" placeholder="发放数量（0 表示不限）" value="${editing?.totalQuantity ?? 0}" />
+            </div>
+            <div class="space-y-1">
+              <input class="input" name="perUserLimit" type="number" min="1" placeholder="每人限领次数" value="${editing?.perUserLimit ?? 1}" />
+            </div>
+            <div class="space-y-1">
+              <label class="text-xs text-slate-500">生效时间（可选）</label>
+              <input class="input" name="startsAt" type="datetime-local" value="${editing?.startsAt ? new Date(editing.startsAt).toISOString().slice(0, 16) : ''}" />
+            </div>
+            <div class="space-y-1">
+              <label class="text-xs text-slate-500">过期时间（可选）</label>
+              <input class="input" name="expiresAt" type="datetime-local" value="${editing?.expiresAt ? new Date(editing.expiresAt).toISOString().slice(0, 16) : ''}" />
+            </div>
+            <div class="md:col-span-2 flex justify-end gap-2">
+              ${editing ? '<button class="btn-outline" type="button" data-action="cancel-edit-coupon">取消编辑</button>' : ''}
+              <button class="btn-primary" type="submit">${editing ? '保存修改' : '添加优惠券'}</button>
+            </div>
+          </form>
+        </div>
+        <div class="grid lg:grid-cols-2 gap-4">${couponRows || '<div class="text-slate-500">暂无优惠券</div>'}</div>
+      `;
+    }
+
     if (state.admin.tab === 'orders') {
       const stats = state.admin.stats || { statusCounts: {}, revenue: 0 };
       const orderCards = state.admin.orders
@@ -501,8 +693,12 @@ export function createViewController({
             <div>
               <p class="text-xs text-slate-400">订单号 ${order.id}</p>
               <p class="font-semibold">${order.user.username} · ${formatStatus(order.status)}</p>
+              ${order.couponCode ? `<p class="text-xs text-teal-600">优惠券：${order.couponCode}</p>` : ''}
             </div>
-            <p class="font-semibold">${formatCurrency(order.total)}</p>
+            <div class="text-right">
+              <p class="font-semibold">${formatCurrency(order.total)}</p>
+              ${order.discount ? `<p class="text-xs text-rose-500">优惠 ${formatCurrency(order.discount)}</p>` : ''}
+            </div>
           </div>
           <div class="text-xs text-slate-500">${order.recipient} ${order.phone}</div>
           <div class="flex flex-wrap gap-2">

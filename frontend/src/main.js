@@ -39,6 +39,14 @@ const toastMap = [
   [/invalid_file_type/i, '仅支持 JPG/PNG/WEBP/GIF/SVG 格式图片'],
   [/file_too_large/i, '图片大小不能超过 2MB'],
   [/forbidden/i, '没有权限执行该操作'],
+  [/coupon.*exists|coupon_code_exists/i, '该券码已存在'],
+  [/coupon.*not.*found|COUPON_NOT_FOUND/i, '优惠券不存在'],
+  [/coupon.*inactive|COUPON_INACTIVE/i, '优惠券已停用'],
+  [/coupon.*expired|COUPON_EXPIRED/i, '优惠券已过期'],
+  [/coupon.*sold.*out|COUPON_SOLD_OUT/i, '优惠券已领完'],
+  [/coupon.*already.*used|COUPON_ALREADY_USED/i, '您已使用过该优惠券'],
+  [/coupon.*below.*threshold|COUPON_BELOW_THRESHOLD/i, '未达到优惠券使用门槛'],
+  [/coupon.*not.*started|COUPON_NOT_STARTED/i, '优惠券尚未生效'],
   [/internal server error/i, '服务器开小差了，请稍后再试']
 ];
 
@@ -119,12 +127,19 @@ async function loadAddresses() {
   state.addresses = await api.getAddresses();
 }
 
+async function loadAvailableCoupons() {
+  if (!state.user) return;
+  const result = await api.getAvailableCoupons();
+  state.coupons = result.coupons || [];
+}
+
 async function loadAdmin() {
   if (!state.user || state.user.role !== 'ADMIN') return;
   state.loading.admin = true;
   state.admin.books = await api.admin.getBooks();
   state.admin.categories = await api.admin.getCategories();
   state.admin.orders = await api.admin.getOrders();
+  state.admin.coupons = await api.admin.getCoupons();
   state.admin.stats = await api.admin.getOrderStats();
   state.loading.admin = false;
 }
@@ -137,6 +152,7 @@ const viewLoaders = {
   cart: async () => {
     await loadCart();
     await loadAddresses();
+    await loadAvailableCoupons();
   },
   orders: loadOrders,
   profile: loadAddresses,
@@ -251,6 +267,7 @@ bindEventHandlers({
   loadOrders,
   loadAddresses,
   loadAdmin,
+  loadAvailableCoupons,
   safeRender,
   openModal,
   closeModal,

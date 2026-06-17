@@ -166,6 +166,16 @@ export const api = {
   clearCart() {
     return request('/cart', { method: 'DELETE' });
   },
+  getAvailableCoupons() {
+    return request('/orders/coupons/available');
+  },
+  applyCoupon(code) {
+    return request('/orders/coupons/apply', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code })
+    });
+  },
   getOrders() {
     return request('/orders');
   },
@@ -283,6 +293,32 @@ export const api = {
         method: 'POST',
         body: formData
       });
+    },
+    getCoupons() {
+      return request('/admin/coupons');
+    },
+    createCoupon(payload) {
+      return request('/admin/coupons', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    },
+    updateCoupon(id, payload) {
+      return request(`/admin/coupons/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    },
+    activateCoupon(id) {
+      return request(`/admin/coupons/${id}/activate`, { method: 'POST' });
+    },
+    deactivateCoupon(id) {
+      return request(`/admin/coupons/${id}/deactivate`, { method: 'POST' });
+    },
+    deleteCoupon(id) {
+      return request(`/admin/coupons/${id}`, { method: 'DELETE' });
     }
   }
 };
