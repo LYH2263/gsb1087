@@ -169,6 +169,70 @@ async function main() {
     }
   });
 
+  const coupons = [
+    {
+      code: 'NEW10',
+      name: '新人立减 10 元',
+      type: 'FIXED',
+      valueCents: 1000,
+      minAmountCents: 0,
+      totalQuantity: 100,
+      perUserLimit: 1,
+      status: 'ACTIVE'
+    },
+    {
+      code: 'SAVE20',
+      name: '满 50 减 20',
+      type: 'FIXED',
+      valueCents: 2000,
+      minAmountCents: 5000,
+      totalQuantity: 50,
+      perUserLimit: 1,
+      status: 'ACTIVE'
+    },
+    {
+      code: 'VIP15',
+      name: '会员 85 折',
+      type: 'PERCENT',
+      percent: 15,
+      minAmountCents: 10000,
+      maxDiscountCents: 5000,
+      totalQuantity: 0,
+      perUserLimit: 1,
+      status: 'ACTIVE'
+    },
+    {
+      code: 'SUMMER50',
+      name: '夏日特惠减 50',
+      type: 'FIXED',
+      valueCents: 5000,
+      minAmountCents: 20000,
+      totalQuantity: 20,
+      perUserLimit: 1,
+      status: 'ACTIVE',
+      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+    },
+    {
+      code: 'EXPIRED5',
+      name: '已过期优惠券',
+      type: 'FIXED',
+      valueCents: 500,
+      minAmountCents: 0,
+      totalQuantity: 100,
+      perUserLimit: 1,
+      status: 'ACTIVE',
+      expiresAt: new Date(Date.now() - 24 * 60 * 60 * 1000)
+    }
+  ];
+
+  for (const coupon of coupons) {
+    await prisma.coupon.upsert({
+      where: { code: coupon.code },
+      update: {},
+      create: coupon
+    });
+  }
+
   logger.info('Seed data initialized');
 }
 

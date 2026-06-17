@@ -89,6 +89,56 @@ export const reviewSchema = z.object({
   reviewText: z.string().min(3, '至少 3 个字').max(200, '最多 200 字')
 });
 
+export const couponCreateSchema = z.object({
+  code: z
+    .string()
+    .min(2, '券码至少 2 位')
+    .max(32, '券码最多 32 位')
+    .regex(/^[A-Z0-9_-]+$/, '仅支持大写字母、数字、下划线和短横线'),
+  name: z.string().min(1, '请输入优惠券名称').max(50, '名称最多 50 字'),
+  type: z.enum(['FIXED', 'PERCENT'], { required_error: '请选择优惠券类型' }),
+  value: z.preprocess(toNumber, z.number().positive('减免金额需大于 0').optional()),
+  percent: z.preprocess(
+    toNumber,
+    z.number({ invalid_type_error: '请输入折扣比例' }).int('折扣需为整数').min(1, '最低 1%').max(99, '最高 99%').optional()
+  ),
+  minAmount: z.preprocess(toNumber, z.number().min(0, '门槛金额不能为负').optional()),
+  maxDiscount: z.preprocess(toNumber, z.number().positive('最大优惠需大于 0').optional()),
+  totalQuantity: z.preprocess(
+    toNumber,
+    z.number({ invalid_type_error: '请输入发放数量' }).int('数量需为整数').min(0, '数量不能为负').optional()
+  ),
+  perUserLimit: z.preprocess(
+    toNumber,
+    z.number({ invalid_type_error: '请输入每人限领次数' }).int('次数需为整数').min(1, '至少 1 次').optional()
+  ),
+  startsAt: z.string().optional(),
+  expiresAt: z.string().optional()
+}).superRefine((data, ctx) => {
+  if (data.type === 'FIXED') {
+    if (!data.value || data.value <= 0 || Number.isNaN(data.value)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: '固定券需指定减免金额',
+        path: ['value']
+      });
+    }
+  }
+  if (data.type === 'PERCENT') {
+    if (!data.percent || data.percent < 1 || data.percent > 99 || Number.isNaN(data.percent)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: '折扣券需指定 1-99 的折扣比例',
+        path: ['percent']
+      });
+    }
+  }
+});
+
+export const applyCouponSchema = z.object({
+  code: z.string().min(2, '请输入券码')
+});
+
 export const COVER_MAX_SIZE = 2 * 1024 * 1024;
 export const COVER_TYPES = [
   'image/png',

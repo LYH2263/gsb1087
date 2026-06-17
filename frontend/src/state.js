@@ -15,20 +15,26 @@ export const state = {
   cart: [],
   orders: [],
   addresses: [],
+  coupons: [],
+  selectedCouponId: null,
+  couponDiscount: 0,
   loading: {
     books: false,
     cart: false,
     orders: false,
     addresses: false,
-    admin: false
+    admin: false,
+    coupons: false
   },
   admin: {
     tab: 'books',
     books: [],
     categories: [],
     orders: [],
+    coupons: [],
     stats: null,
-    editingBook: null
+    editingBook: null,
+    editingCoupon: null
   },
   profile: {
     editingAddress: null
