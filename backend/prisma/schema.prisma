@@ -33,6 +33,16 @@ enum PaymentMethod {
   COD
 }
 
+enum CouponType {
+  FIXED
+  PERCENT
+}
+
+enum CouponStatus {
+  ACTIVE
+  INACTIVE
+}
+
 model User {
   id           String          @id @default(cuid())
   username     String          @unique
@@ -47,6 +57,7 @@ model User {
   cartItems    CartItem[]
   orders       Order[]
   passwordResets PasswordReset[]
+  userCoupons  UserCoupon[]
 }
 
 model Session {
@@ -122,12 +133,50 @@ model Address {
   user         User     @relation(fields: [userId], references: [id])
 }
 
+model Coupon {
+  id            String        @id @default(cuid())
+  code          String        @unique
+  name          String
+  type          CouponType
+  valueCents    Int?
+  percent       Int?
+  minAmountCents Int
+  maxDiscountCents Int?
+  status        CouponStatus  @default(ACTIVE)
+  startsAt      DateTime?
+  expiresAt     DateTime?
+  usageLimit    Int?
+  usedCount     Int           @default(0)
+  perUserLimit  Int           @default(1)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  userCoupons   UserCoupon[]
+  orders        Order[]
+}
+
+model UserCoupon {
+  id         String   @id @default(cuid())
+  userId     String
+  couponId   String
+  usedAt     DateTime?
+  orderId    String?
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id])
+  coupon     Coupon   @relation(fields: [couponId], references: [id])
+
+  @@unique([userId, couponId])
+  @@index([orderId])
+}
+
 model Order {
   id            String       @id @default(cuid())
   userId        String
   status        OrderStatus  @default(PENDING_PAYMENT)
   paymentMethod PaymentMethod
   totalCents    Int
+  subtotalCents Int
+  discountCents Int          @default(0)
+  couponId      String?
   recipient     String
   phone         String
   line1         String
@@ -141,6 +190,7 @@ model Order {
   updatedAt     DateTime     @updatedAt
   user          User         @relation(fields: [userId], references: [id])
   items         OrderItem[]
+  coupon        Coupon?      @relation(fields: [couponId], references: [id])
 }
 
 model OrderItem {

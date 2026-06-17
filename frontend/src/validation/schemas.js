@@ -42,7 +42,8 @@ export const addressSchema = z.object({
 
 export const checkoutSchema = z.object({
   addressId: z.string().min(1, '请选择配送地址'),
-  paymentMethod: z.string().min(1, '请选择支付方式')
+  paymentMethod: z.string().min(1, '请选择支付方式'),
+  userCouponId: z.string().optional()
 });
 
 function toNumber(value) {
@@ -88,6 +89,47 @@ export const reviewSchema = z.object({
   ),
   reviewText: z.string().min(3, '至少 3 个字').max(200, '最多 200 字')
 });
+
+export const couponRedeemSchema = z.object({
+  code: z.string().min(2, '兑换码至少 2 位').max(32, '兑换码最长 32 位')
+});
+
+export const adminCouponSchema = z.object({
+  code: z.string().min(2, '券码至少 2 位').max(32, '券码最长 32 位'),
+  name: z.string().min(1, '请输入优惠券名称').max(64, '名称最长 64 位'),
+  type: z.enum(['FIXED', 'PERCENT'], { required_error: '请选择优惠券类型' }),
+  value: z.preprocess(
+    toNumber,
+    z.number({ invalid_type_error: '请输入减免金额' }).positive('减免金额需大于 0').optional()
+  ),
+  percent: z.preprocess(
+    toNumber,
+    z.number({ invalid_type_error: '请输入折扣比例' }).int('折扣需为整数').min(1, '最低 1 折').max(99, '最高 99 折').optional()
+  ),
+  minAmount: z.preprocess(
+    toNumber,
+    z.number({ invalid_type_error: '请输入使用门槛' }).min(0, '门槛不能为负')
+  ),
+  maxDiscount: z.preprocess(
+    toNumber,
+    z.number({ invalid_type_error: '请输入最高优惠' }).positive('最高优惠需大于 0').optional()
+  ),
+  status: z.enum(['ACTIVE', 'INACTIVE']).optional(),
+  startsAt: z.string().optional(),
+  expiresAt: z.string().optional(),
+  usageLimit: z.preprocess(
+    toNumber,
+    z.number({ invalid_type_error: '请输入总使用次数' }).int('次数需为整数').min(1, '至少 1 次').optional()
+  ),
+  perUserLimit: z.preprocess(
+    toNumber,
+    z.number({ invalid_type_error: '请输入每人限领次数' }).int('次数需为整数').min(1, '至少 1 次').optional()
+  )
+}).refine((data) => {
+  if (data.type === 'FIXED') return data.value !== undefined && !Number.isNaN(data.value);
+  if (data.type === 'PERCENT') return data.percent !== undefined && !Number.isNaN(data.percent);
+  return false;
+}, { message: '请填写对应类型的优惠值', path: ['value'] });
 
 export const COVER_MAX_SIZE = 2 * 1024 * 1024;
 export const COVER_TYPES = [

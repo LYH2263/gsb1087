@@ -4,6 +4,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const { ApiError } = require('../errors');
 const { checkoutSchema, reviewSchema } = require('../validators');
 const { fromCents } = require('../utils/money');
+const { calculateDiscount } = require('./coupons');
 
 const router = express.Router();
 
@@ -13,6 +14,10 @@ function mapOrder(order) {
     status: order.status,
     paymentMethod: order.paymentMethod,
     total: fromCents(order.totalCents),
+    subtotal: order.subtotalCents ? fromCents(order.subtotalCents) : fromCents(order.totalCents),
+    discount: order.discountCents ? fromCents(order.discountCents) : 0,
+    couponId: order.couponId,
+    couponName: order.coupon?.name || null,
     recipient: order.recipient,
     phone: order.phone,
     line1: order.line1,
@@ -72,10 +77,53 @@ router.post('/checkout', asyncHandler(async (req, res) => {
     }
   }
 
-  const totalCents = cartItems.reduce(
+  const subtotalCents = cartItems.reduce(
     (sum, item) => sum + item.book.priceCents * item.quantity,
     0
   );
+
+  let discountCents = 0;
+  let couponId = null;
+  let userCouponId = null;
+
+  if (payload.userCouponId) {
+    const userCoupon = await prisma.userCoupon.findUnique({
+      where: { id: payload.userCouponId },
+      include: { coupon: true }
+    });
+
+    if (!userCoupon || userCoupon.userId !== req.user.id) {
+      throw new ApiError(404, 'USER_COUPON_NOT_FOUND');
+    }
+
+    if (userCoupon.usedAt) {
+      throw new ApiError(400, 'COUPON_ALREADY_USED');
+    }
+
+    const coupon = userCoupon.coupon;
+    if (coupon.status !== 'ACTIVE') {
+      throw new ApiError(400, 'COUPON_INACTIVE');
+    }
+
+    const now = new Date();
+    if (coupon.startsAt && coupon.startsAt > now) {
+      throw new ApiError(400, 'COUPON_NOT_STARTED');
+    }
+    if (coupon.expiresAt && coupon.expiresAt < now) {
+      throw new ApiError(400, 'COUPON_EXPIRED');
+    }
+
+    const discountResult = calculateDiscount(coupon, subtotalCents);
+    if (!discountResult.valid) {
+      throw new ApiError(400, 'COUPON_NOT_ELIGIBLE');
+    }
+
+    discountCents = discountResult.discountCents;
+    couponId = coupon.id;
+    userCouponId = userCoupon.id;
+  }
+
+  const totalCents = subtotalCents - discountCents > 0 ? subtotalCents - discountCents : 0;
 
   const order = await prisma.$transaction(async (tx) => {
     const created = await tx.order.create({
@@ -83,6 +131,9 @@ router.post('/checkout', asyncHandler(async (req, res) => {
         userId: req.user.id,
         paymentMethod: payload.paymentMethod,
         totalCents,
+        subtotalCents,
+        discountCents,
+        couponId,
         recipient: address.recipient,
         phone: address.phone,
         line1: address.line1,
@@ -112,6 +163,16 @@ router.post('/checkout', asyncHandler(async (req, res) => {
       });
     }
 
+    if (userCouponId) {
+      await tx.userCoupon.update({
+        where: { id: userCouponId },
+        data: {
+          usedAt: new Date(),
+          orderId: created.id
+        }
+      });
+    }
+
     await tx.cartItem.deleteMany({
       where: { userId: req.user.id }
     });
@@ -121,7 +182,7 @@ router.post('/checkout', asyncHandler(async (req, res) => {
 
   const fullOrder = await prisma.order.findUnique({
     where: { id: order.id },
-    include: { items: true }
+    include: { items: true, coupon: true }
   });
 
   res.status(201).json(mapOrder(fullOrder));
